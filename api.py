@@ -39,140 +39,133 @@ GENDERS = {
 NoneType = type(None)
 
 
+class ValidationError(Exception):
+    pass
+
+
 class Field(object):
     def __init__(self, required=False, nullable=True, *args, **kwargs):
         self.required = required
         self.nullable = nullable
         self.value = None
+        self.name = None
         self.empty_values = (None, "", [], (), {})
         self.validators = []
 
+    def __set_name__(self, owner, name):
+        self._name = name
+
     def __get__(self, obj, objtype):
-        return self.value
+        return obj.__dict__.get(self._name)
 
     def __set__(self, obj, value):
-        self.validate(value)
-        self.value = value
+        self.check_validation(value)
+        obj.__dict__[self._name] = value
 
     def validate(self, value):
+        pass
+
+    def check_validation(self, value):
         if (value is None and not self.required) or (
             self.nullable and value in self.empty_values
         ):
             return
         if value is None and self.required:
-            raise ValueError("Value is required")
+            raise ValidationError("Value is required")
         if not self.nullable and value in self.empty_values:
-            raise ValueError("Value cannot be empty")
-        for validator in self.validators:
-            validator(value)
+            raise ValidationError("Value cannot be empty")
+        self.validate(value)
 
 
 class CharField(Field):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.empty_values = ("",)
-        self.validators.append(self.validator)
+    empty_values = ("",)
 
-    @staticmethod
-    def validator(value):
+    def validate(self, value):
         if not isinstance(value, (str)):
-            raise ValueError("Value must be a string")
+            raise ValidationError("Value must be a string")
 
 
 class ArgumentsField(Field):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.empty_values = ({},)
-        self.validators.append(self.validator)
+    empty_values = ({},)
 
-    @staticmethod
-    def validator(value):
+    def validate(self, value):
         if not isinstance(value, (dict)):
-            raise ValueError("Value must be a dict")
+            raise ValidationError("Value must be a dict")
 
 
 class EmailField(CharField):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.empty_values = ("",)
-        self.validators.append(self.validator)
+    empty_values = ("",)
 
-    @staticmethod
-    def validator(value):
-        if not isinstance(value, str) or "@" not in value:
-            raise ValueError("Value must be a valid email address")
+    def validate(self, value):
+        super().validate(value)
+        if "@" not in value:
+            raise ValidationError("Value must be a valid email address")
 
 
 class PhoneField(Field):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.empty_values = ("",)
-        self.validators.append(self.validator)
+    empty_values = ("",)
 
-    @staticmethod
-    def validator(value):
+    def validate(self, value):
         if not isinstance(value, (str, int)) or not re.match(
             r"^7[0-9]{10}", str(value)
         ):
-            raise ValueError("Value must be a valid phone number")
+            raise ValidationError("Value must be a valid phone number")
 
 
 class DateField(CharField):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.empty_values = ("",)
-        self.validators.append(self.validator)
+    empty_values = ("",)
 
-    @staticmethod
-    def validator(value):
-        if not isinstance(value, str) or not re.match(r"^\d{2}\.\d{2}\.\d{4}", value):
-            raise ValueError("Value must be a valid date")
+    def validate(self, value):
+        super().validate(value)
+        if not re.match(r"^\d{2}\.\d{2}\.\d{4}", value):
+            raise ValidationError("Value must be a valid date")
 
 
 class BirthDayField(DateField):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.empty_values = ("",)
-        self.validators.append(self.validator)
+    empty_values = ("",)
 
-    @staticmethod
-    def validator(value):
-        if not isinstance(value, str) or not re.match(r"^\d{2}\.\d{2}\.\d{4}", value):
-            raise ValueError("Value must be a valid date")
+    def validate(self, value):
+        super().validate(value)
         max_years_diff = 70
         date = datetime.strptime(value, "%d.%m.%Y")
         diff_years = (datetime.now() - date).days / 365.25
         if diff_years < 0 or diff_years >= max_years_diff:
-            raise ValueError("Value can't be future or more than 70 years ago from now")
+            raise ValidationError(
+                "Value can't be future or more than 70 years ago from now"
+            )
 
 
 class GenderField(Field):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.empty_values = ("",)
-        self.validators.append(self.validator)
+    empty_values = ("",)
 
-    @staticmethod
-    def validator(value):
+    def validate(self, value):
         if not isinstance(value, int):
-            raise ValueError("Value must be integer")
+            raise ValidationError("Value must be integer")
         if value not in (UNKNOWN, MALE, FEMALE):
-            raise ValueError("Value must be valid gender code")
+            raise ValidationError("Value must be valid gender code")
 
 
 class ClientIDsField(Field):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.empty_values = ([],)
-        self.validators.append(self.validator)
+    empty_values = ([],)
 
-    @staticmethod
-    def validator(value):
-        if not isinstance(value, list) or not all(isinstance(i, int) for i in value):
-            raise ValueError("Value must be a list of integers")
+    def validate(self, value):
+        is_valid = (
+            isinstance(value, list)
+            and all(isinstance(i, int) for i in value)
+        )
+        if not is_valid:
+            raise ValidationError("Value must be a list of integers")
 
 
-class BaseRequest:
+class RequestMeta(type):
+    def __call__(self, *args, **kwargs):
+        self.fields = [
+            f for f in self.__dict__ if isinstance(self.__dict__.get(f), Field)
+        ]
+        return super().__call__(*args, **kwargs)
+
+
+class BaseRequest(metaclass=RequestMeta):
     fields = ()
 
     def __init__(self, *args, **kwargs):
@@ -180,34 +173,24 @@ class BaseRequest:
         for field in self.fields:
             try:
                 setattr(self, field, kwargs.get(field))
-            except ValueError as e:
+            except ValidationError as e:
                 if not errors.get(field):
                     errors[field] = []
                 errors[field].append(str(e))
 
         if errors:
-            raise ValueError(errors)
+            raise ValidationError(errors)
 
 
 class ClientsInterestsRequest(BaseRequest):
-    fields = ("client_ids", "date")
     client_ids = ClientIDsField(required=True, nullable=False)
     date = DateField(required=False, nullable=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        ctx = args[0]
-        ctx["nclients"] = len(self.client_ids)
-
-    def get_result(self, store):
-        result = {}
-        for id in self.client_ids:
-            result[id] = get_interests(store, None)
-        return result
 
 
 class OnlineScoreRequest(BaseRequest):
-    fields = ("first_name", "last_name", "email", "phone", "birthday", "gender")
     first_name = CharField(required=False, nullable=True)
     last_name = CharField(required=False, nullable=True)
     email = EmailField(required=False, nullable=True)
@@ -218,42 +201,27 @@ class OnlineScoreRequest(BaseRequest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.validate()
-        ctx = args[0]
-        ctx["has"] = [
-            field for field in self.fields if getattr(self, field) is not None
-        ]
 
     def validate(self):
         def is_valid_pair(a, b):
             return a is not None and b is not None
 
-        any_pair_valid = any((
-            is_valid_pair(self.phone, self.email),
-            is_valid_pair(self.first_name, self.last_name),
-            is_valid_pair(self.gender, self.birthday)
-        ))
+        any_pair_valid = any(
+            (
+                is_valid_pair(self.phone, self.email),
+                is_valid_pair(self.first_name, self.last_name),
+                is_valid_pair(self.gender, self.birthday),
+            )
+        )
         if any_pair_valid:
             return
 
-        raise ValueError(
-            "Must contain at least one pair of values(phone/email , first_name/last_name , gender/birtday)"
+        raise ValidationError(
+            ("Must contain at least one pair of values(phone/email , first_name/last_name , gender/birtday)")
         )
-
-    def get_result(self, store):
-        score = get_score(
-            store,
-            self.phone,
-            self.email,
-            self.birthday,
-            self.gender,
-            self.first_name,
-            self.last_name,
-        )
-        return {"score": score}
 
 
 class MethodRequest(BaseRequest):
-    fields = ("account", "login", "token", "arguments", "method")
     account = CharField(required=True, nullable=True)
     login = CharField(required=True, nullable=True)
     token = CharField(required=True, nullable=True)
@@ -266,17 +234,38 @@ class MethodRequest(BaseRequest):
 
 
 def check_auth(request):
+    login = request.login or ""
+    account = request.account or ""
     if request.is_admin:
         digest = hashlib.sha512(
             (datetime.now().strftime("%Y%m%d%H") + ADMIN_SALT).encode("utf-8")
         ).hexdigest()
     else:
-        digest = hashlib.sha512(
-            (request.account + request.login + SALT).encode("utf-8")
-        ).hexdigest()
+        digest = hashlib.sha512((account + login + SALT).encode("utf-8")).hexdigest()
     if digest == request.token:
         return True
     return False
+
+
+def get_online_score(request, store):
+    score = get_score(
+        store,
+        request.phone,
+        request.email,
+        request.birthday,
+        request.gender,
+        request.first_name,
+        request.last_name,
+    )
+    return {"score": score}
+
+
+def get_client_interests(request, store):
+    result = {}
+    if request.client_ids:
+        for id in request.client_ids:
+            result[id] = get_interests(store, None)
+    return result
 
 
 def method_handler(request, ctx, store):
@@ -292,17 +281,31 @@ def method_handler(request, ctx, store):
         )
 
         if not check_auth(method_request):
-            return ERRORS[FORBIDDEN], FORBIDDEN
+            return None, FORBIDDEN
+
+        arguments = {}
+        if method_request.arguments is not None:
+            arguments = method_request.arguments
 
         if method_request.method == "online_score":
             if method_request.is_admin:
                 return {"score": 42}, OK
-            online_score = OnlineScoreRequest(ctx, **method_request.arguments)
-            return online_score.get_result(store), OK
+            online_score = OnlineScoreRequest(**arguments)
+            ctx["has"] = [
+                field for field in online_score.fields
+                if getattr(online_score, field) is not None
+            ]
+            return get_online_score(online_score, store), OK
+
         if method_request.method == "clients_interests":
-            clients_interests = ClientsInterestsRequest(ctx, **method_request.arguments)
-            return clients_interests.get_result(store), OK
-    except ValueError as errors:
+            clients_interests = ClientsInterestsRequest(**arguments)
+            ctx["nclients"] = (
+                len(clients_interests.client_ids)
+                if clients_interests.client_ids
+                else 0
+            )
+            return get_client_interests(clients_interests, store), OK
+    except ValidationError as errors:
         return str(errors), INVALID_REQUEST
 
 
