@@ -4,7 +4,7 @@
 
 ## Getting Started
 
-Запуск: python3 api.py  
+Запуск: python3 scoring_api/api.py  
 Запуск тестов: pytest
 
 Опциональные параметры:  
