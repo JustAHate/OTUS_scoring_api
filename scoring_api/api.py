@@ -9,6 +9,7 @@ import uuid
 from optparse import OptionParser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
+import redis
 from scoring import get_score, get_interests
 
 
@@ -37,6 +38,11 @@ GENDERS = {
     FEMALE: "female",
 }
 NoneType = type(None)
+CONFIG = {
+    'REDIS_HOST': 'localhost',
+    'REDIS_PORT': '6379',
+    'REDIS_TIMEOUT': 5
+}
 
 
 class ValidationError(Exception):
@@ -49,7 +55,7 @@ class Field(object):
         self.nullable = nullable
         self.value = None
         self.name = None
-        self.empty_values = (None, "", [], (), {})
+        self.empty_values = ("", [], (), {})
         self.validators = []
 
     def __set_name__(self, owner, name):
@@ -309,9 +315,48 @@ def method_handler(request, ctx, store):
         return str(errors), INVALID_REQUEST
 
 
+class Store:
+    def __init__(self):
+        self.messages = {
+            'connection_error': 'Can\'t connect to redis'
+        }
+        host = CONFIG.get('REDIS_HOST')
+        port = CONFIG.get('REDIS_PORT')
+        timeout = CONFIG.get('REDIS_TIMEOUT')
+        self.store = redis.StrictRedis(
+            host=host,
+            port=port,
+            socket_timeout=timeout,
+            decode_responses=True,
+            retry_on_timeout=True
+        )
+
+    def get(self, key):
+        try:
+            cached_value = self.store.get(key)
+        except redis.exceptions.ConnectionError:
+            logging.info(self.messages.get('connection_error'))
+            return None
+        return cached_value
+
+    def set(self, key, value, expire):
+        try:
+            self.store.set(key, value)
+            self.store.expire(key, expire)
+        except redis.exceptions.ConnectionError:
+            logging.info(self.messages.get('connection_error'))
+            return None
+
+    def cache_get(self, *args, **kwargs):
+        return self.get(*args, **kwargs)
+
+    def cache_set(self, *args, **kwargs):
+        return self.set(*args, **kwargs)
+
+
 class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {"method": method_handler}
-    store = None
+    store = Store()
 
     def get_request_id(self, headers):
         return headers.get("HTTP_X_REQUEST_ID", uuid.uuid4().hex)
