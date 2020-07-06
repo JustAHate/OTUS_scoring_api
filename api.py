@@ -169,6 +169,9 @@ class BaseRequest(metaclass=RequestMeta):
     fields = ()
 
     def __init__(self, *args, **kwargs):
+        self.set_values(kwargs)
+
+    def set_values(self, kwargs):
         errors = {}
         for field in self.fields:
             try:
@@ -268,6 +271,27 @@ def get_client_interests(request, store):
     return result
 
 
+def online_score_handler(method, arguments, ctx, store):
+    if method.is_admin:
+        return {"score": 42}, OK
+    online_score = OnlineScoreRequest(**arguments)
+    ctx["has"] = [
+        field for field in online_score.fields
+        if getattr(online_score, field) is not None
+    ]
+    return get_online_score(online_score, store), OK
+
+
+def clients_interests_handler(arguments, ctx, store):
+    clients_interests = ClientsInterestsRequest(**arguments)
+    ctx["nclients"] = (
+        len(clients_interests.client_ids)
+        if clients_interests.client_ids
+        else 0
+    )
+    return get_client_interests(clients_interests, store), OK
+
+
 def method_handler(request, ctx, store):
     request_body = request.get("body")
 
@@ -288,23 +312,9 @@ def method_handler(request, ctx, store):
             arguments = method_request.arguments
 
         if method_request.method == "online_score":
-            if method_request.is_admin:
-                return {"score": 42}, OK
-            online_score = OnlineScoreRequest(**arguments)
-            ctx["has"] = [
-                field for field in online_score.fields
-                if getattr(online_score, field) is not None
-            ]
-            return get_online_score(online_score, store), OK
-
+            return online_score_handler(method_request, arguments, ctx, store)
         if method_request.method == "clients_interests":
-            clients_interests = ClientsInterestsRequest(**arguments)
-            ctx["nclients"] = (
-                len(clients_interests.client_ids)
-                if clients_interests.client_ids
-                else 0
-            )
-            return get_client_interests(clients_interests, store), OK
+            return clients_interests_handler(arguments, ctx, store)
     except ValidationError as errors:
         return str(errors), INVALID_REQUEST
 
