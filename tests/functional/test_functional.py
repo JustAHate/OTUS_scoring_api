@@ -3,18 +3,27 @@ import hashlib
 from scoring_api import api
 import datetime
 
-from pprint import pprint
-
 
 def get_response(data, ctx, headers, store):
     return api.method_handler({"body": data, "headers": headers}, ctx, store)
+
+
+class MockStore():
+    def get(self, *args):
+        return None
+
+    def cache_get(self, *args):
+        return None
+
+    def cache_set(self, *args):
+        pass
 
 
 @pytest.fixture
 def get_request_data():
     ctx = {}
     headers = {}
-    store = {}
+    store = MockStore()
     return ctx, headers, store
 
 
@@ -24,7 +33,6 @@ def get_request_with_auth():
         if body is None:
             body = {"account": "horns&hoofs", "login": "h&f", "method": "online_score"}
         if body.get("login") == api.ADMIN_LOGIN:
-            print('ADMIN ADMIN ADMIN ADMIN ADMIN ADMIN')
             body["token"] = hashlib.sha512((datetime.datetime.now().strftime("%Y%m%d%H") + api.ADMIN_SALT).encode('utf-8')).hexdigest()
         else:
             msg = body.get("account", "") + body.get("login", "") + api.SALT
@@ -67,7 +75,6 @@ def test_bad_auth(body, get_request_data):
 )
 def test_invalid_method_request(body, get_request_with_auth, get_request_data):
     data = get_request_with_auth(body)
-    pprint(data)
     ctx, headers, store = get_request_data
     response, code = get_response(data, ctx, headers, store)
     assert code == api.INVALID_REQUEST
@@ -169,7 +176,5 @@ def test_ok_interests_request(arguments, get_request_with_auth, get_request_data
     response, code = get_response(request, ctx, headers, store)
     assert code == api.OK
     assert len(arguments["client_ids"]) == len(response)
-    assert all(v and isinstance(v, list) and all(isinstance(i, str) for i in v)
-                    for v in response.values())
     assert ctx.get("nclients") == len(arguments["client_ids"])
 

@@ -21,10 +21,8 @@ from datetime import datetime, timedelta
     )
 )
 def test_field_ok(required, nullable, value):
-    class TestField:
-        field = api.Field(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.Field(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -37,15 +35,13 @@ def test_field_ok(required, nullable, value):
         (True, False, []),
         (False, False, []),
         (True, False, {}),
-        (False, False, {})
+        (False, False, {}),
     )
 )
 def test_field_bad(required, nullable, value):
-    class TestField:
-        field = api.Field(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.Field(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -58,10 +54,8 @@ def test_field_bad(required, nullable, value):
     )
 )
 def test_charfield_ok(required, nullable, value):
-    class TestField:
-        field = api.CharField(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.CharField(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -74,11 +68,9 @@ def test_charfield_ok(required, nullable, value):
     )
 )
 def test_charfield_bad(required, nullable, value):
-    class TestField:
-        field = api.CharField(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.CharField(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -90,10 +82,8 @@ def test_charfield_bad(required, nullable, value):
     )
 )
 def test_argumentsfield_ok(required, nullable, value):
-    class TestField:
-        field = api.ArgumentsField(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.ArgumentsField(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -106,11 +96,9 @@ def test_argumentsfield_ok(required, nullable, value):
     )
 )
 def test_argumentsfield_bad(required, nullable, value):
-    class TestField:
-        field = api.ArgumentsField(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.ArgumentsField(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -121,10 +109,8 @@ def test_argumentsfield_bad(required, nullable, value):
     )
 )
 def test_emailfield_ok(required, nullable, value):
-    class TestField:
-        field = api.EmailField(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.EmailField(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -137,11 +123,9 @@ def test_emailfield_ok(required, nullable, value):
     )
 )
 def test_emailfield_bad(required, nullable, value):
-    class TestField:
-        field = api.EmailField(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.EmailField(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -152,10 +136,8 @@ def test_emailfield_bad(required, nullable, value):
     )
 )
 def test_phonefield_ok(required, nullable, value):
-    class TestField:
-        field = api.PhoneField(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.PhoneField(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -169,11 +151,9 @@ def test_phonefield_ok(required, nullable, value):
     )
 )
 def test_phonefield_bad(required, nullable, value):
-    class TestField:
-        field = api.PhoneField(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.PhoneField(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -184,10 +164,8 @@ def test_phonefield_bad(required, nullable, value):
     )
 )
 def test_datefield_ok(required, nullable, value):
-    class TestField:
-        field = api.DateField(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.DateField(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -201,11 +179,9 @@ def test_datefield_ok(required, nullable, value):
     )
 )
 def test_datefield_bad(required, nullable, value):
-    class TestField:
-        field = api.DateField(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.DateField(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -213,17 +189,15 @@ def test_datefield_bad(required, nullable, value):
         (
             True,
             False,
-            (datetime.now() - timedelta(days=70 * 365.25)).strftime('%d.%m.%Y')
+            (datetime.now() - timedelta(days=70 * 365.25 - 1)).strftime('%d.%m.%Y')
         ),
         (True, True, ''),
         (False, True, None)
     )
 )
 def test_birthdayfield_ok(required, nullable, value):
-    class TestField:
-        field = api.BirthDayField(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.BirthDayField(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -247,11 +221,9 @@ def test_birthdayfield_ok(required, nullable, value):
     )
 )
 def test_birthdayfield_bad(required, nullable, value):
-    class TestField:
-        field = api.BirthDayField(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.BirthDayField(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -263,10 +235,8 @@ def test_birthdayfield_bad(required, nullable, value):
     )
 )
 def test_gender_field_ok(required, nullable, value):
-    class TestField:
-        field = api.GenderField(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.GenderField(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -278,11 +248,9 @@ def test_gender_field_ok(required, nullable, value):
     )
 )
 def test_gender_field_bad(required, nullable, value):
-    class TestField:
-        field = api.GenderField(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.GenderField(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -293,10 +261,8 @@ def test_gender_field_bad(required, nullable, value):
     )
 )
 def test_clientids_field_ok(required, nullable, value):
-    class TestField:
-        field = api.ClientIDsField(required=required, nullable=nullable)
-    obj = TestField()
-    obj.field = value
+    field = api.ClientIDsField(required=required, nullable=nullable)
+    assert field.check_validation(value)
 
 
 @pytest.mark.parametrize(
@@ -310,8 +276,6 @@ def test_clientids_field_ok(required, nullable, value):
     )
 )
 def test_clientids_field_bad(required, nullable, value):
-    class TestField:
-        field = api.ClientIDsField(required=required, nullable=nullable)
-    obj = TestField()
+    field = api.ClientIDsField(required=required, nullable=nullable)
     with pytest.raises(api.ValidationError):
-        obj.field = value
+        assert field.check_validation(value)
