@@ -59,7 +59,6 @@ class Field(object):
         return obj.__dict__.get(self._name)
 
     def __set__(self, obj, value):
-        self.check_validation(value)
         obj.__dict__[self._name] = value
 
     def validate(self, value):
@@ -169,13 +168,17 @@ class BaseRequest(metaclass=RequestMeta):
     fields = ()
 
     def __init__(self, *args, **kwargs):
-        self.set_values(kwargs)
+        for field in self.fields:
+            setattr(self, field, kwargs.get(field))
 
-    def set_values(self, kwargs):
+    def validate(self):
         errors = {}
         for field in self.fields:
             try:
-                setattr(self, field, kwargs.get(field))
+                value = getattr(self, field)
+                descriptor = type(self).__dict__[field]
+                if descriptor:
+                    descriptor.check_validation(value)
             except ValidationError as e:
                 if not errors.get(field):
                     errors[field] = []
@@ -189,9 +192,6 @@ class ClientsInterestsRequest(BaseRequest):
     client_ids = ClientIDsField(required=True, nullable=False)
     date = DateField(required=False, nullable=True)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
 
 class OnlineScoreRequest(BaseRequest):
     first_name = CharField(required=False, nullable=True)
@@ -201,11 +201,9 @@ class OnlineScoreRequest(BaseRequest):
     birthday = BirthDayField(required=False, nullable=True)
     gender = GenderField(required=False, nullable=True)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.validate()
-
     def validate(self):
+        super().validate()
+
         def is_valid_pair(a, b):
             return a is not None and b is not None
 
@@ -250,46 +248,42 @@ def check_auth(request):
     return False
 
 
-def get_online_score(request, store):
-    score = get_score(
-        store,
-        request.phone,
-        request.email,
-        request.birthday,
-        request.gender,
-        request.first_name,
-        request.last_name,
-    )
-    return {"score": score}
-
-
-def get_client_interests(request, store):
-    result = {}
-    if request.client_ids:
-        for id in request.client_ids:
-            result[id] = get_interests(store, None)
-    return result
-
-
 def online_score_handler(method, arguments, ctx, store):
     if method.is_admin:
         return {"score": 42}, OK
     online_score = OnlineScoreRequest(**arguments)
+    online_score.validate()
     ctx["has"] = [
         field for field in online_score.fields
         if getattr(online_score, field) is not None
     ]
-    return get_online_score(online_score, store), OK
+
+    score = get_score(
+        store,
+        online_score.phone,
+        online_score.email,
+        online_score.birthday,
+        online_score.gender,
+        online_score.first_name,
+        online_score.last_name,
+    )
+
+    return {'score': score}, OK
 
 
 def clients_interests_handler(arguments, ctx, store):
     clients_interests = ClientsInterestsRequest(**arguments)
+    clients_interests.validate()
     ctx["nclients"] = (
         len(clients_interests.client_ids)
         if clients_interests.client_ids
         else 0
     )
-    return get_client_interests(clients_interests, store), OK
+    result = {}
+    if clients_interests.client_ids:
+        for c_id in clients_interests.client_ids:
+            result[c_id] = get_interests(store, None)
+    return result, OK
 
 
 def method_handler(request, ctx, store):
@@ -303,6 +297,7 @@ def method_handler(request, ctx, store):
             token=request_body.get("token"),
             arguments=request_body.get("arguments"),
         )
+        method_request.validate()
 
         if not check_auth(method_request):
             return None, FORBIDDEN
