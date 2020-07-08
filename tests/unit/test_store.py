@@ -1,46 +1,50 @@
 import pytest
-from unittest.mock import MagicMock
-import redis
-from scoring_api.store import Store
-
-
-class RedisMock:
-    def get(self, *args):
-        return 42
-
-    def set(self, value, *args):
-        pass
-
-    def expire(self, *args):
-        pass
+from redis import Redis
+from redis.exceptions import ConnectionError
+import time
+import subprocess
+from scoring_api.store import Store, StoreAccessException
 
 
 @pytest.fixture()
-def mock_redis_ok():
-    redis.StrictRedis = MagicMock(return_value=RedisMock())
+def redis_fixture():
+    port = '6380'
+    redis_process = subprocess.Popen(['redis-server', '--port', port])
+    time.sleep(0.1)
+    _redis = Redis(port=port)
+    yield
+    redis_process.terminate()
+    redis_process.wait()
 
 
-@pytest.fixture()
-def mock_redis_bad(mock_redis_ok):
-    redis.StrictRedis = MagicMock(side_effect=redis.exceptions.ConnectionError)
+def test_store_connection_ok(redis_fixture):
+    store = Store('127.0.0.1', 6380, 5)
+    assert store.store.ping()
 
 
-def test_store_connection_ok():
-    store = Store()
-    assert isinstance(store.store, redis.Redis)
+def test_store_connection_bad():
+    with pytest.raises(ConnectionError):
+        store = Store('127.0.0.1', 6380, 5)
+        assert store.store.ping()
 
 
-def test_store_connection_bad(mock_redis_bad):
-    with pytest.raises(redis.exceptions.ConnectionError):
-        store = Store()
-        assert isinstance(store.store, redis.Redis)
+def test_store_cache(redis_fixture):
+    store = Store('127.0.0.1', 6380, 5)
+    init_val = 'eggs'
+    store.cache_set('spam', init_val, 60)
+    assert store.cache_get('spam') == init_val
 
 
-def test_store_get(mock_redis_ok):
-    store = Store()
-    assert store.get('spam') == 42
+def test_store_storage_ok(redis_fixture):
+    store = Store('127.0.0.1', 6380, 5)
+    init_val = 'eggs'
+    store.cache_set('spam', init_val, 60)
+    assert store.get('spam') == init_val
 
 
-def test_store_set(mock_redis_ok):
-    store = Store()
-    assert store.set('spam', 'eggs', 180) == ('spam', 'eggs', 180)
+def test_store_storage_bad():
+    store = Store('127.0.0.1', 6380, 5)
+    init_val = 'eggs'
+    store.cache_set('spam', init_val, 60)
+    with pytest.raises(StoreAccessException):
+        assert store.get('spam') == init_val

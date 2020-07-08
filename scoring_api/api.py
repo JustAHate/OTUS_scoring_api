@@ -37,7 +37,6 @@ GENDERS = {
     MALE: "male",
     FEMALE: "female",
 }
-NoneType = type(None)
 
 
 class ValidationError(Exception):
@@ -60,7 +59,6 @@ class Field(object):
         return obj.__dict__.get(self._name)
 
     def __set__(self, obj, value):
-        self.check_validation(value)
         obj.__dict__[self._name] = value
 
     def validate(self, value):
@@ -171,13 +169,17 @@ class BaseRequest(metaclass=RequestMeta):
     fields = ()
 
     def __init__(self, *args, **kwargs):
-        self.set_values(kwargs)
+        for field in self.fields:
+            setattr(self, field, kwargs.get(field))
 
-    def set_values(self, kwargs):
+    def validate(self):
         errors = {}
         for field in self.fields:
             try:
-                setattr(self, field, kwargs.get(field))
+                value = getattr(self, field)
+                descriptor = type(self).__dict__[field]
+                if descriptor:
+                    descriptor.check_validation(value)
             except ValidationError as e:
                 if not errors.get(field):
                     errors[field] = []
@@ -190,9 +192,6 @@ class BaseRequest(metaclass=RequestMeta):
 class ClientsInterestsRequest(BaseRequest):
     client_ids = ClientIDsField(required=True, nullable=False)
     date = DateField(required=False, nullable=True)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
 
 class OnlineScoreRequest(BaseRequest):
@@ -208,6 +207,8 @@ class OnlineScoreRequest(BaseRequest):
         self.validate()
 
     def validate(self):
+        super().validate()
+
         def is_valid_pair(a, b):
             return a is not None and b is not None
 
@@ -252,46 +253,42 @@ def check_auth(request):
     return False
 
 
-def get_online_score(request, store):
-    score = get_score(
-        store,
-        request.phone,
-        request.email,
-        request.birthday,
-        request.gender,
-        request.first_name,
-        request.last_name,
-    )
-    return {"score": score}
-
-
-def get_client_interests(request, store):
-    result = {}
-    if request.client_ids:
-        for id in request.client_ids:
-            result[id] = get_interests(store, None)
-    return result
-
-
 def online_score_handler(method, arguments, ctx, store):
     if method.is_admin:
         return {"score": 42}, OK
     online_score = OnlineScoreRequest(**arguments)
+    online_score.validate()
     ctx["has"] = [
         field for field in online_score.fields
         if getattr(online_score, field) is not None
     ]
-    return get_online_score(online_score, store), OK
+
+    score = get_score(
+        store,
+        online_score.phone,
+        online_score.email,
+        online_score.birthday,
+        online_score.gender,
+        online_score.first_name,
+        online_score.last_name,
+    )
+
+    return {'score': score}, OK
 
 
 def clients_interests_handler(arguments, ctx, store):
     clients_interests = ClientsInterestsRequest(**arguments)
+    clients_interests.validate()
     ctx["nclients"] = (
         len(clients_interests.client_ids)
         if clients_interests.client_ids
         else 0
     )
-    return get_client_interests(clients_interests, store), OK
+    result = {}
+    if clients_interests.client_ids:
+        for c_id in clients_interests.client_ids:
+            result[c_id] = get_interests(store, None)
+    return result, OK
 
 
 def method_handler(request, ctx, store):
@@ -305,6 +302,7 @@ def method_handler(request, ctx, store):
             token=request_body.get("token"),
             arguments=request_body.get("arguments"),
         )
+        method_request.validate()
 
         if not check_auth(method_request):
             return None, FORBIDDEN
@@ -323,7 +321,10 @@ def method_handler(request, ctx, store):
 
 class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {"method": method_handler}
-    store = Store()
+    redis_host = '127.0.0.1'
+    redis_port = 6379
+    redis_expire = 5
+    store = Store(redis_host, redis_port, redis_expire)
 
     def get_request_id(self, headers):
         return headers.get("HTTP_X_REQUEST_ID", uuid.uuid4().hex)
@@ -369,6 +370,9 @@ if __name__ == "__main__":
     op = OptionParser()
     op.add_option("-p", "--port", action="store", type=int, default=8080)
     op.add_option("-l", "--log", action="store", default=None)
+    op.add_option("-rh", "--redis_host", action="store", default=None)
+    op.add_option("-rp", "--redis_port", action="store", default=None)
+    op.add_option("-re", "--redis_expire", action="store", default=None)
     (opts, args) = op.parse_args()
     logging.basicConfig(
         filename=opts.log,
@@ -376,6 +380,9 @@ if __name__ == "__main__":
         format="[%(asctime)s] %(levelname).1s %(message)s",
         datefmt="%Y.%m.%d %H:%M:%S",
     )
+    MainHTTPHandler.redis_host = opts.redis_host
+    MainHTTPHandler.redis_port = opts.redis_port
+    MainHTTPHandler.redis_expire = opts.redis_expire
     server = HTTPServer(("localhost", opts.port), MainHTTPHandler)
     logging.info("Starting server at %s" % opts.port)
     try:
